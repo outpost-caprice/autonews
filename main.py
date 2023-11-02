@@ -24,6 +24,19 @@ schema = {
     "required": ["category1"]
 }
 
+def openai_api_call(model, temperature, messages):
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            temperature=temperature,
+            messages=messages
+        )
+        return response.choices[0].message['content']
+    except Exception as e:
+        print(f"Error in OpenAI API call: {e}")
+        traceback.print_exc()
+        return None
+
 # カテゴリー作成関数
 def generate_category(content):
     try:
@@ -42,17 +55,14 @@ def generate_category(content):
 # リード文作成関数
 def generate_lead(content):
     try:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0613",
-            temperature=0.6,
-            max_tokens=100,
-            messages=[
-                {"role": "system", "content": "あなたは優秀なリード文生成アシスタントです。提供された文章をもとに、日本語のリード文を生成してください。"},
-                {"role": "user", "content": content}
-            ]
-        )
-        lead = response.choices[0].text.strip()
+        lead = openai_api_call(
+        "gpt-3.5-turbo-0613",
+        0.6,
+        [
+            {"role": "system", "content": "あなたは優秀なリード文生成アシスタントです。提供された文章をもとに、日本語のリード文を生成してください。"},
+            {"role": "user", "content": content}
+        ]
+    )
         return lead
     except Exception as e:
         print(f"Error in lead generation: {e}")
@@ -63,16 +73,15 @@ def generate_lead(content):
 # 要約用の関数
 def summarize_content(content):
     try:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-16k-0613",
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "あなたは優秀な要約アシスタントです。提供された文章をもとに、できる限り正確な内容にすることを意識して要約してください。"},
-                {"role": "user", "content": content}
-            ]
+        summary = openai_api_call(
+        "gpt-3.5-turbo-16k-0613",
+        0,
+        [
+            {"role": "system", "content": "あなたは優秀な要約アシスタントです。提供された文章をもとに、できる限り正確な内容にすることを意識して要約してください。"},
+            {"role": "user", "content": content}
+        ]
         )
-        return completion.choices[0].message['content']
+        return summary
     except Exception as e:
         print(f"Error in summarization: {e}")
         traceback.print_exc()
@@ -82,16 +91,15 @@ def summarize_content(content):
 # 意見生成用の関数
 def generate_opinion(content):
     try:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            temperature=0.6,
-            messages=[
-                {"role": "system", "content": "あなたは優秀な意見生成アシスタントです。提供された文章をもとに、感想や意見を生成してください。"},
-                {"role": "user", "content": content}
-            ]
+        opinion = openai_api_call(
+        "gpt-4",
+        0.6,
+        [
+            {"role": "system", "content": "あなたは優秀な意見生成アシスタントです。提供された文章をもとに、感想や意見を生成してください。"},
+            {"role": "user", "content": content}
+        ]
         )
-        return completion.choices[0].message['content']
+        return opinion
     except Exception as e:
         print(f"Error in opinion generation: {e}")
         traceback.print_exc()
@@ -107,7 +115,7 @@ def write_to_sheet(summary, opinion, categories, lead):
     service = build('sheets', 'v4', credentials=creds)
 
     # スプレッドシートIDと範囲を指定
-    SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'
+    SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
     RANGE_NAME = 'A1'  # 適切な範囲を指定
 
     # 現在の時刻を取得
@@ -148,24 +156,9 @@ def check_new_hn_content(request):
             
             # カテゴリを生成
             categories = generate_category(full_content)
-            
-            # IFTTTのWebhook URL
-            webhook_url = os.getenv("IFTTT_WEBHOOK_URL")
-
-            # IFTTTに送信するデータ
-            data = {
-                "value1": f"新しいニュースがあります(ID: {new_id})",
-                "value2": summary,
-                "value3": opinion,
-                "value4": lead,
-                "value5": ", ".join(categories)  # カテゴリをカンマで区切る
-            }
-
-            # IFTTTのWebhookを通じてSlackに投稿
-            requests.post(webhook_url, json=data)
 
             # スプレッドシートに要約と意見を書き込む
-            write_to_sheet(summary, opinion)
+            write_to_sheet(summary, opinion, lead, categories)
 
             # 最後に確認したニュースのIDを更新
             last_checked_id = new_id
