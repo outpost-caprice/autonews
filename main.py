@@ -7,6 +7,7 @@ from langchain.chains import create_extraction_chain
 import openai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+import datetime
 
 # 最後に確認したニュースのID
 last_checked_id = None
@@ -23,7 +24,7 @@ schema = {
     "required": ["category1"]
 }
 
-
+# カテゴリー作成関数
 def generate_category(content):
     try:
         # LLM (Language Model) を初期化
@@ -38,7 +39,7 @@ def generate_category(content):
         traceback.print_exc()
         return "カテゴリを生成できませんでした"
     
-
+# リード文作成関数
 def generate_lead(content):
     try:
         openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -98,7 +99,7 @@ def generate_opinion(content):
 
 
 # スプレッドシートへの書き込み関数
-def write_to_sheet(summary, opinion):
+def write_to_sheet(summary, opinion, categories, lead):
     creds = None
     # トークンの読み込み
     if os.path.exists('token.json'):
@@ -109,12 +110,16 @@ def write_to_sheet(summary, opinion):
     SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'
     RANGE_NAME = 'A1'  # 適切な範囲を指定
 
+    # 現在の時刻を取得
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     # データの書き込み
-    values = [[summary, opinion]]
+    values = [[now, summary, opinion, ", ".join(categories), lead]]
     body = {'values': values}
     result = service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME,
         valueInputOption='RAW', body=body).execute()
+
 
 # 新しいHacker Newsのコンテンツを確認する関数
 def check_new_hn_content(request):
@@ -144,12 +149,17 @@ def check_new_hn_content(request):
             # カテゴリを生成
             categories = generate_category(full_content)
             
-
             # IFTTTのWebhook URL
             webhook_url = os.getenv("IFTTT_WEBHOOK_URL")
 
             # IFTTTに送信するデータ
-            data = {"value1": f"新しいニュースがあります(ID: {new_id})", "value2": summary, "value3": opinion}
+            data = {
+                "value1": f"新しいニュースがあります(ID: {new_id})",
+                "value2": summary,
+                "value3": opinion,
+                "value4": lead,
+                "value5": ", ".join(categories)  # カテゴリをカンマで区切る
+            }
 
             # IFTTTのWebhookを通じてSlackに投稿
             requests.post(webhook_url, json=data)
