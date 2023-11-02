@@ -6,7 +6,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import create_extraction_chain
 import openai
 from google.oauth2.credentials import Credentials
-from googleapiclient import discovery
+from googleapiclient.discovery import build
 
 # 最後に確認したニュースのID
 last_checked_id = None
@@ -22,10 +22,12 @@ schema = {
     },
     "required": ["category1"]
 }
+
+
 def generate_category(content):
     try:
         # LLM (Language Model) を初期化
-        llm = ChatOpenAI(temperature=0.6, model="gpt-3.5-turbo")
+        llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo")
         # 抽出チェーンを作成
         chain = create_extraction_chain(schema, llm)
         # チェーンを実行
@@ -35,7 +37,7 @@ def generate_category(content):
         print(f"Error in category generation: {e}")
         traceback.print_exc()
         return "カテゴリを生成できませんでした"
-
+    
 
 def generate_lead(content):
     try:
@@ -43,6 +45,7 @@ def generate_lead(content):
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo-0613",
             temperature=0.6,
+            max_tokens=100,
             messages=[
                 {"role": "system", "content": "あなたは優秀なリード文生成アシスタントです。提供された文章をもとに、日本語のリード文を生成してください。"},
                 {"role": "user", "content": content}
@@ -54,9 +57,6 @@ def generate_lead(content):
         print(f"Error in lead generation: {e}")
         traceback.print_exc()
         return "リード文を生成できませんでした"
-    
-
-
 
 
 # 要約用の関数
@@ -77,6 +77,7 @@ def summarize_content(content):
         traceback.print_exc()
         return "要約できませんでした"
 
+
 # 意見生成用の関数
 def generate_opinion(content):
     try:
@@ -95,6 +96,8 @@ def generate_opinion(content):
         traceback.print_exc()
         return "意見を生成できませんでした"
 
+
+# スプレッドシートへの書き込み関数
 def write_to_sheet(summary, opinion):
     creds = None
     # トークンの読み込み
@@ -135,6 +138,13 @@ def check_new_hn_content(request):
             # 意見を生成
             opinion = generate_opinion(summary)
 
+            # リード文を生成
+            lead = generate_lead(summary)
+            
+            # カテゴリを生成
+            categories = generate_category(full_content)
+            
+
             # IFTTTのWebhook URL
             webhook_url = os.getenv("IFTTT_WEBHOOK_URL")
 
@@ -157,4 +167,3 @@ def check_new_hn_content(request):
         print(f"An unexpected error occurred: {e}")
         traceback.print_exc()
 
-#"C:\Users\araki\AppData\Local\Programs\Python\Python310\python.exe"
