@@ -46,11 +46,10 @@ async def async_check_new_content():
   new_id = data[0]['id']
   return new_id, last_checked_id
 
-async def async_fetch_news_content(new_id, last_checked_id):
-  if new_id != last_checked_id:
-    full_content = new_id['page_content']
-    last_checked_id = new_id
-    return [full_content]
+async def async_fetch_news_content(new_id, last_checked_id): 
+    if new_id != last_checked_id:
+        full_content = new_id['page_content']  
+        return [full_content] 
 
 async def async_summarize_content(content):
     try:
@@ -138,36 +137,78 @@ def write_to_sheet(summary, opinion, categories, lead):
         valueInputOption='RAW', body=body).execute()
     print ("書き込みが完了しました")
 
-
 async def process_new_content():
-  new_id, last_checked_id = await async_check_new_content()
-  
-  if new_id != last_checked_id:
-    full_content_list = await async_fetch_news_content(new_id, last_checked_id)
-    
-    summary_and_category_tasks = [
-      asyncio.create_task(async_summarize_content(content)) for content in full_content_list
-    ] + [
-      asyncio.create_task(async_generate_category(content)) for content in full_content_list
-    ]
-    
-    summary_and_category_results = await asyncio.gather(*summary_and_category_tasks)
-    summaries = summary_and_category_results[:len(full_content_list)]
-    categories = summary_and_category_results[len(full_content_list):]
-    
-    opinion_and_lead_tasks = [
-      asyncio.create_task(async_generate_opinion(summary)) for summary in summaries 
-    ] + [
-      asyncio.create_task(async_generate_lead(summary)) for summary in summaries
-    ]
-    
-    opinion_and_lead_results = await asyncio.gather(*opinion_and_lead_tasks)
-    opinions = opinion_and_lead_results[:len(summaries)]
-    leads = opinion_and_lead_results[len(summaries):]
-    
-    for i in range(len(summaries)):
-      write_to_sheet(summaries[i], opinions[i], categories[i], leads[i])
-    
+    new_id, last_checked_id_temp = await async_check_new_content()
+    if new_id != last_checked_id:
+        full_content_list = await async_fetch_news_content(new_id, last_checked_id)
+
+        # summaries and categories processing
+        summaries = []
+        categories = []
+        for content in full_content_list:
+            # using asyncio.create_task to create a new task and await on it immediately
+            summary_task = asyncio.create_task(async_summarize_content(content))
+            category_task = asyncio.create_task(async_generate_category(content))
+            
+            # awaiting on individual tasks to handle timeout and errors separately
+            try:
+                summary = await asyncio.wait_for(summary_task, timeout=10)  # 10 seconds timeout
+                summaries.append(summary)
+            except asyncio.TimeoutError:
+                print("Summarization task timed out")
+                summaries.append(None)  # append None or an empty string if task fails or times out
+            except Exception as e:
+                print(f"Error in summarization: {e}")
+                summaries.append(None)
+                
+            try:
+                category = await asyncio.wait_for(category_task, timeout=10)  # 10 seconds timeout
+                categories.append(category)
+            except asyncio.TimeoutError:
+                print("Category generation task timed out")
+                categories.append(None)  # append None or an empty string if task fails or times out
+            except Exception as e:
+                print(f"Error in category generation: {e}")
+                categories.append(None)
+        # opinions and leads processing
+        opinions = []
+        leads = []
+        for summary in summaries:
+            if summary:  # check if summary is not None or empty before proceeding
+                opinion_task = asyncio.create_task(async_generate_opinion(summary))
+                lead_task = asyncio.create_task(async_generate_lead(summary))
+                
+                # awaiting on individual tasks to handle timeout and errors separately
+                try:
+                    opinion = await asyncio.wait_for(opinion_task, timeout=10)  # 10 seconds timeout
+                    opinions.append(opinion)
+                except asyncio.TimeoutError:
+                    print("Opinion generation task timed out")
+                    opinions.append(None)  # append None or an empty string if task fails or times out
+                except Exception as e:
+                    print(f"Error in opinion generation: {e}")
+                    opinions.append(None)
+                    
+                try:
+                    lead = await asyncio.wait_for(lead_task, timeout=10)  # 10 seconds timeout
+                    leads.append(lead)
+                except asyncio.TimeoutError:
+                    print("Lead generation task timed out")
+                    leads.append(None)  # append None or an empty string if task fails or times out
+                except Exception as e:
+                    print(f"Error in lead generation: {e}")
+                    leads.append(None)
+        # writing to spreadsheet
+        for i in range(len(summaries)):
+            if summaries[i]:  # check if summary is not None or empty before proceeding
+                # If any of the values are None or empty, replace them with a default message
+                summary = summaries[i]
+                category = categories[i] if categories[i] else "カテゴリを生成できませんでした"
+                opinion = opinions[i] if opinions[i] else "意見を生成できませんでした"
+                lead = leads[i] if leads[i] else "リード文を生成できませんでした"
+                write_to_sheet(summary, opinion, category, lead)
+        last_checked_id = new_id
+
 # 非同期関数の実行
 if __name__ == "__main__":
   asyncio.run(process_new_content())
