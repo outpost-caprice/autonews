@@ -169,4 +169,3 @@ def check_new_hn_content(request):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         traceback.print_exc()
-
