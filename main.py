@@ -103,7 +103,7 @@ def generate_opinion(content):
         "gpt-4",
         0.6,
         [
-            {"role": "system", "content": "あなたは優秀な意見生成アシスタントです。提供された文章をもとに、感想や意見を生成してください。"},
+            {"role": "system", "content": "あなたは優秀な意見生成アシスタントです。提供された文章をもとに、文章に関する感想や意見を生成してください。"},
             {"role": "user", "content": content}
         ]
         )
