@@ -126,6 +126,7 @@ def write_to_sheet(summary, opinion, categories, lead):
     result = service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME,
         valueInputOption='RAW', body=body).execute()
+    print(result)
 
 # 新しいHacker Newsのコンテンツを確認する関数
 async def check_new_hn_content():
