@@ -12,6 +12,7 @@ from google.auth.transport.requests import Request
 from datetime import datetime
 import sqlite3
 import time
+import base64
 
 # SQLiteデータベースファイルへのパス
 DATABASE_FILE_PATH = 'latest.db'
@@ -33,21 +34,23 @@ def update_last_checked_id(new_id):
     conn.commit()
     conn.close()
 
-# 環境変数から認証情報を取得する関数
-def get_credentials():
-    service_account_info = json.loads(os.environ['GOOGLE_SERVICE_ACCOUNT_JSON'])
-    creds = service_account.Credentials.from_service_account_info(
-        service_account_info,
-        scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-    )
-    return creds
+# エンコードされた認証情報を取得
+encoded_creds = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
 
+# base64デコード  
+decoded_creds = base64.b64decode(encoded_creds)
 
-# 環境変数からサービスアカウントのJSONを取得
-service_account_json_str = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-service_account_info = json.loads(service_account_json_str)
-credentials = service_account.Credentials.from_service_account_info(service_account_info)
+# JSONロード
+service_account_info = json.loads(decoded_creds)
 
+# Credentialsインスタンス作成
+credentials = service_account.Credentials.from_service_account_info(
+  service_account_info,
+  scopes=[
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+  ]
+)
 # OpenAI APIキーを環境変数から取得
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
@@ -146,14 +149,12 @@ def generate_opinion(content):
 
 # スプレッドシートへの書き込み関数
 def write_to_sheet(summary, opinion, categories, lead):
-    creds = get_credentials()
-    # Google Sheets APIサービスオブジェクトを構築
-    service = build('sheets', 'v4', credentials=creds)
+   # Google Sheets APIサービスオブジェクトを構築 
+    service = build('sheets', 'v4', credentials=credentials)
 
     # アクセストークンが期限切れの場合は、リフレッシュする
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-
+    if credentials and credentials.expired and credentials.refresh_token:
+        credentials.refresh(Request())
     # スプレッドシートIDと範囲を指定
     SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
     RANGE_NAME = 'A1'  # 適切な範囲を指定
@@ -209,15 +210,3 @@ def check_new_hn_content(request):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         traceback.print_exc()
-
-
-'''
-自動実行がないとき用
-def run_periodically():
-  while True:
-      check_new_hn_content(None)  # 引数が必要ない場合はNoneを渡す
-      time.sleep(300)  # 5分(300秒)待機
-
-# スクリプトの実行開始
-run_periodically()
-'''
