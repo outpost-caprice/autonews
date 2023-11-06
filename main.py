@@ -7,7 +7,15 @@ from langchain.chains import create_extraction_chain
 import openai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
 import datetime
+
+# 環境変数から認証情報を取得
+client_id = os.getenv('GOOGLE_CLIENT_ID')
+client_secret = os.getenv('GOOGLE_CLIENT_SECRET')
+refresh_token = os.getenv('GOOGLE_REFRESH_TOKEN')
+project_id = os.getenv('GOOGLE_PROJECT_ID')
+
 
 # 最後に確認したニュースのID
 last_checked_id = None
@@ -108,10 +116,20 @@ def generate_opinion(content):
 
 # スプレッドシートへの書き込み関数
 def write_to_sheet(summary, opinion, categories, lead):
-    creds = None
-    # トークンの読み込み
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json')
+    creds = Credentials(
+    None,  # アクセストークンは最初はNoneに設定
+    refresh_token=refresh_token,
+    token_uri='https://oauth2.googleapis.com/token',
+    client_id=client_id,
+    client_secret=client_secret,
+    scopes=['https://www.googleapis.com/auth/spreadsheets']
+)
+
+# アクセストークンが期限切れの場合は、リフレッシュする
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+
+    # Google Sheets APIサービスオブジェクトを構築
     service = build('sheets', 'v4', credentials=creds)
 
     # スプレッドシートIDと範囲を指定
