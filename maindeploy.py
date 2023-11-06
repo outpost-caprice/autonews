@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from datetime import datetime
 import sqlite3
-
+import time
 
 # SQLiteデータベースファイルへのパス
 DATABASE_FILE_PATH = 'latest.db'
@@ -23,7 +23,7 @@ def get_last_checked_id():
     c.execute('SELECT last_checked_id FROM hacker_news WHERE id = 1')
     result = c.fetchone()
     conn.close()
-    return result[0] if result else None
+    return result[0] if result else 38160079
 
 # SQLiteに最新のニュースIDを保存する関数
 def update_last_checked_id(new_id):
@@ -41,6 +41,12 @@ def get_credentials():
         scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
     )
     return creds
+
+
+# 環境変数からサービスアカウントのJSONを取得
+service_account_json_str = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+service_account_info = json.loads(service_account_json_str)
+credentials = service_account.Credentials.from_service_account_info(service_account_info)
 
 # OpenAI APIキーを環境変数から取得
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -83,7 +89,7 @@ def generate_category(content):
         print(f"Error in category generation: {e}")
         traceback.print_exc()
         return "カテゴリを生成できませんでした"
-    
+
 # リード文作成関数
 def generate_lead(content):
     try:
@@ -144,7 +150,7 @@ def write_to_sheet(summary, opinion, categories, lead):
     # Google Sheets APIサービスオブジェクトを構築
     service = build('sheets', 'v4', credentials=creds)
 
-# アクセストークンが期限切れの場合は、リフレッシュする
+    # アクセストークンが期限切れの場合は、リフレッシュする
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
 
@@ -165,7 +171,7 @@ def write_to_sheet(summary, opinion, categories, lead):
 
 # 新しいHacker Newsのコンテンツを確認する関数
 def check_new_hn_content(request):
-    global last_checked_id
+    last_checked_id = get_last_checked_id()
     try:
         # Hacker Newsのトップページをロード
         loader = HNLoader("https://news.ycombinator.com/")
@@ -187,7 +193,7 @@ def check_new_hn_content(request):
 
             # リード文を生成
             lead = generate_lead(summary)
-            
+
             # カテゴリを生成
             categories = generate_category(full_content)
 
@@ -205,3 +211,13 @@ def check_new_hn_content(request):
         traceback.print_exc()
 
 
+'''
+自動実行がないとき用
+def run_periodically():
+  while True:
+      check_new_hn_content(None)  # 引数が必要ない場合はNoneを渡す
+      time.sleep(300)  # 5分(300秒)待機
+
+# スクリプトの実行開始
+run_periodically()
+'''
