@@ -36,7 +36,8 @@ def update_last_checked_id(new_id):
 
 # エンコードされた認証情報を取得
 encoded_creds = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
-
+if not encoded_creds:
+    raise ValueError("環境変数 'GOOGLE_APPLICATION_CREDENTIALS_JSON' が設定されていません。")
 # base64デコード  
 decoded_creds = base64.b64decode(encoded_creds)
 
