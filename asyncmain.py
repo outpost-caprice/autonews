@@ -135,31 +135,42 @@ async def check_new_hn_content():
         loader = HNLoader("https://news.ycombinator.com/")
         data = await loader.load()
 
-        # トップニュースのIDを取得
+        # 最新のニュースアイテムのIDを取得
         new_id = data[0]['id']
+        max_checked_id = last_checked_id  # 最大の確認済みニュースIDを保持する変数
 
         # 新しいニュースがあるか確認
         if new_id > last_checked_id:
-            # 新しいニュースの内容をすべて取得
-            full_content = data[0]['page_content']
+            # 新しいニュースアイテムを処理
+            for item in data:
+                # 現在のニュースアイテムのIDを取得
+                current_id = item['id']
 
-            # 内容を要約
-            summary = await summarize_content(full_content)
+                # 前回チェックしたID + 1 から最新のニュースIDまで処理
+                if last_checked_id < current_id <= new_id:
+                    full_content = item['page_content']
 
-            # 意見を生成
-            opinion = await generate_opinion(summary)
+                    # 内容を要約
+                    summary = await summarize_content(full_content)
 
-            # リード文を生成
-            lead = await generate_lead(summary)
+                    # 意見を生成
+                    opinion = await generate_opinion(summary)
 
-            # カテゴリを生成
-            categories = await generate_category(full_content)
+                    # リード文を生成
+                    lead = await generate_lead(summary)
 
-            # スプレッドシートに要約と意見を書き込む
-            write_to_sheet(summary, opinion, categories, lead)
+                    # カテゴリを生成
+                    categories = await generate_category(full_content)
+
+                    # スプレッドシートに要約と意見を書き込む
+                    write_to_sheet(summary, opinion, categories, lead)
+
+                    # 最大の確認済みニュースIDを更新
+                    max_checked_id = max(max_checked_id, current_id)
 
             # 最後に確認したニュースのIDを更新
-            last_checked_id = new_id
+            last_checked_id = max_checked_id
+
     except requests.exceptions.RequestException as e:
         print(f"Request error: {e}")
     except openai.Error as e:
@@ -167,7 +178,3 @@ async def check_new_hn_content():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         traceback.print_exc()
-
-# 非同期関数を実行するためのメイン関数
-if __name__ == "__main__":
-    asyncio.run(check_new_hn_content())
