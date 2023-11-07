@@ -10,29 +10,26 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from datetime import datetime
-import sqlite3
 import time
 import base64
 
-# SQLiteデータベースファイルへのパス
-DATABASE_FILE_PATH = 'latest.db'
+# スプレッドシートから前回のニュースIDを取得する関数
+def get_last_checked_id_from_sheet(service, SPREADSHEET_ID):
+    RANGE_NAME = 'J1'  # 最新記事IDが保存されるセル
+    result = service.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
+    values = result.get('values', [])
+    if not values:
+        return None
+    return values[0][0]
 
-# SQLiteから前回のニュースIDを取得する関数
-def get_last_checked_id():
-    conn = sqlite3.connect(DATABASE_FILE_PATH)
-    c = conn.cursor()
-    c.execute('SELECT last_checked_id FROM hacker_news WHERE id = 1')
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else 38160079
-
-# SQLiteに最新のニュースIDを保存する関数
-def update_last_checked_id(new_id):
-    conn = sqlite3.connect(DATABASE_FILE_PATH)
-    c = conn.cursor()
-    c.execute('INSERT OR REPLACE INTO hacker_news (id, last_checked_id) VALUES (1, ?)', (new_id,))
-    conn.commit()
-    conn.close()
+# スプレッドシートに最新のニュースIDを保存する関数
+def update_last_checked_id_on_sheet(service, SPREADSHEET_ID, new_id):
+    RANGE_NAME = 'J1'  # 最新記事IDを保存するセル
+    values = [[new_id]]
+    body = {'values': values}
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME,
+        valueInputOption='RAW', body=body).execute()
 
 # エンコードされた認証情報を取得
 encoded_creds = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
@@ -52,6 +49,13 @@ credentials = service_account.Credentials.from_service_account_info(
     'https://www.googleapis.com/auth/drive'
   ]
 )
+
+# Sheets APIのserviceインスタンスを作成
+service = build('sheets', 'v4', credentials=credentials)
+
+# スプレッドシートのIDを取得
+SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
+
 # OpenAI APIキーを環境変数から取得
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
@@ -149,31 +153,29 @@ def generate_opinion(content):
 
 
 # スプレッドシートへの書き込み関数
-def write_to_sheet(summary, opinion, categories, lead):
-   # Google Sheets APIサービスオブジェクトを構築 
-    service = build('sheets', 'v4', credentials=credentials)
-
-    # アクセストークンが期限切れの場合は、リフレッシュする
-    if credentials and credentials.expired and credentials.refresh_token:
-        credentials.refresh(Request())
-    # スプレッドシートIDと範囲を指定
-    SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
-    RANGE_NAME = 'A1'  # 適切な範囲を指定
-
+def write_to_sheet(service, SPREADSHEET_ID, summary, opinion, categories, lead, new_id):
+    RANGE_NAME = 'A1'  # 要約と意見が書き込まれる範囲の開始セル
     # 現在の時刻を取得
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     # データの書き込み
     values = [[now, summary, opinion, ", ".join(categories), lead]]
     body = {'values': values}
-    result = service.spreadsheets().values().append(
+    # 要約と意見をスプレッドシートに追記
+    service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME,
         valueInputOption='RAW', body=body).execute()
+    # 最新の記事IDをJ1セルに書き込む
+    update_last_checked_id_on_sheet(service, SPREADSHEET_ID, new_id)
 
 
 # 新しいHacker Newsのコンテンツを確認する関数
 def check_new_hn_content(request):
-    last_checked_id = get_last_checked_id()
+    # service インスタンスと SPREADSHEET_ID を取得
+    service = build('sheets', 'v4', credentials=credentials)
+    SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
+    
+    # 最後にチェックしたIDを取得
+    last_checked_id = get_last_checked_id_from_sheet(service, SPREADSHEET_ID)
     try:
         # Hacker Newsのトップページをロード
         loader = HNLoader("https://news.ycombinator.com/")
@@ -200,10 +202,10 @@ def check_new_hn_content(request):
             categories = generate_category(full_content)
 
             # スプレッドシートに要約と意見を書き込む
-            write_to_sheet(summary, opinion, lead, categories)
+            write_to_sheet(service, SPREADSHEET_ID, summary, opinion, categories, lead, new_id)
 
             # 最後に確認したニュースのIDを更新
-            last_checked_id = new_id
+            update_last_checked_id_on_sheet(service, SPREADSHEET_ID, new_id)
     except requests.exceptions.RequestException as e:
         print(f"Request error: {e}")
     except openai.Error as e:
