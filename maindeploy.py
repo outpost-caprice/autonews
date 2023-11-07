@@ -12,6 +12,7 @@ from google.auth.transport.requests import Request
 from datetime import datetime
 import time
 import base64
+from bs4 import BeautifulSoup
 
 # スプレッドシートから前回のニュースIDを取得する関数
 def get_last_checked_id_from_sheet(service, SPREADSHEET_ID):
@@ -55,9 +56,14 @@ service = build('sheets', 'v4', credentials=credentials)
 
 # スプレッドシートのIDを取得
 SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
+if not SPREADSHEET_ID:
+    raise ValueError("環境変数 'YOUR_SPREADSHEET_ID' が設定されていません。")
+
 
 # OpenAI APIキーを環境変数から取得
 openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise ValueError("環境変数 'OPENAI_API_KEY' が設定されていません。")
 
 # スキーマを定義
 schema = {
@@ -78,10 +84,15 @@ def openai_api_call(model, temperature, messages):
             messages=messages
         )
         return response.choices[0].message['content']
+    except openai.OpenAIError as e:  
+        print(f"OpenAI API error: {e}")
+        traceback.print_exc()
+        return None
     except Exception as e:
         print(f"Error in OpenAI API call: {e}")
         traceback.print_exc()
         return None
+
 
 # カテゴリー作成関数
 def generate_category(content):
@@ -173,7 +184,7 @@ def check_new_hn_content(request):
     # service インスタンスと SPREADSHEET_ID を取得
     service = build('sheets', 'v4', credentials=credentials)
     SPREADSHEET_ID = os.getenv('YOUR_SPREADSHEET_ID')
-    
+
     # 最後にチェックしたIDを取得
     last_checked_id = get_last_checked_id_from_sheet(service, SPREADSHEET_ID)
     try:
@@ -208,7 +219,7 @@ def check_new_hn_content(request):
             update_last_checked_id_on_sheet(service, SPREADSHEET_ID, new_id)
     except requests.exceptions.RequestException as e:
         print(f"Request error: {e}")
-    except openai.Error as e:
+    except openai.OpenAIError as e: 
         print(f"OpenAI API error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
